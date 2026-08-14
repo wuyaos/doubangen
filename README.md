@@ -62,7 +62,7 @@ Windows 图标通过 `build.rs` 用 `windres` 嵌入 `.exe` 资源段。
 
 ## CI
 
-[![build](https://github.com/<owner>/doubangen/actions/workflows/build.yml/badge.svg)](https://github.com/<owner>/doubangen/actions/workflows/build.yml)
+[![build](https://github.com/wuyaos/doubangen/actions/workflows/build.yml/badge.svg)](https://github.com/wuyaos/doubangen/actions/workflows/build.yml)
 
 GitHub Actions 每次 push / PR 自动编译 Linux 与 Windows 产物并上传为 artifact。打 tag `v*` 会额外发布 Release。
 

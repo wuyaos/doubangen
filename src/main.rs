@@ -40,9 +40,6 @@ fn cn_source(v: &str) -> &'static str {
 fn cn_format(v: &str) -> &'static str {
     match v { "bbcode" => "BBCode", "json" => "JSON", _ => "" }
 }
-fn cn_media(v: &str) -> &'static str {
-    match v { "auto" => "自动", "movie" => "电影", "tv" => "剧集", _ => "" }
-}
 
 fn primary_btn(ui: &mut egui::Ui, text: &str) -> egui::Response {
     ui.add(egui::Button::new(
@@ -57,10 +54,7 @@ fn secondary_btn(ui: &mut egui::Ui, text: &str) -> egui::Response {
 // ───────── main ─────────
 
 fn main() -> eframe::Result {
-    let cfg = find_config_path()
-        .and_then(|p| config::load(&p).ok().map(|c| (c, p)))
-        .map(|(c, p)| (Arc::new(Mutex::new(c)), p))
-        .unwrap_or_else(|| (Arc::new(Mutex::new(Config::default())), "config.toml".into()));
+    let (cfg, cfg_path) = ensure_config();
     let icon = load_icon();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -75,7 +69,7 @@ fn main() -> eframe::Result {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             set_mocha_theme(&cc.egui_ctx);
             install_system_font(&cc.egui_ctx);
-            Ok(Box::new(App::new(cfg.0, cfg.1)))
+            Ok(Box::new(App::new(cfg, cfg_path)))
         }),
     )
 }
@@ -307,6 +301,63 @@ impl App {
         self.status_toast = format!("已保存到 {}", self.cfg_path);
         true
     }
+
+    /// 当前配置文件位于用户目录还是程序目录
+    fn config_location_kind(&self) -> &'static str {
+        if let Some(up) = user_config_path() {
+            if up.to_str() == Some(self.cfg_path.as_str()) { return "user"; }
+        }
+        "app"
+    }
+
+    /// 切换配置位置：复制原配置文件原始内容（保留注释）到新位置，删除旧文件；history.json 一并迁移
+    fn switch_config_location(&mut self, to_user: bool) {
+        let new_path = if to_user { user_config_path() } else { app_config_path() };
+        let Some(np) = new_path else { return; };
+        let np = np.to_str().unwrap().to_string();
+        if np == self.cfg_path { return; }
+        let content = match std::fs::read(&self.cfg_path) {
+            Ok(c) => c,
+            Err(_) => { self.status_toast = "迁移失败（无法读取原配置）".into(); return; }
+        };
+        if let Some(dir) = std::path::Path::new(&np).parent() {
+            if std::fs::create_dir_all(dir).is_err() {
+                self.status_toast = "迁移失败（无法创建目标目录）".into();
+                return;
+            }
+        }
+        if std::fs::write(&np, &content).is_err() {
+            self.status_toast = "迁移失败（目标不可写）".into();
+            return;
+        }
+        // history.json 一并迁移
+        let old_history = history_path_for(&self.cfg_path);
+        let new_history = history_path_for(&np);
+        if old_history != new_history && std::path::Path::new(&old_history).exists() {
+            if let Ok(h) = std::fs::read(&old_history) {
+                if std::fs::write(&new_history, &h).is_ok() {
+                    let _ = std::fs::remove_file(&old_history);
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&self.cfg_path);
+        self.cfg_path = np;
+        self.history_path = history_path_for(&self.cfg_path);
+        self.status_toast = format!("配置已迁移到 {}", self.cfg_path);
+    }
+
+    /// 用系统文件管理器打开配置文件所在目录
+    fn open_config_dir(&self) {
+        if let Some(dir) = std::path::Path::new(&self.cfg_path).parent() {
+            #[cfg(target_os = "windows")]
+            let cmd = "explorer";
+            #[cfg(target_os = "linux")]
+            let cmd = "xdg-open";
+            #[cfg(target_os = "macos")]
+            let cmd = "open";
+            let _ = std::process::Command::new(cmd).arg(dir).spawn();
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -317,9 +368,17 @@ impl eframe::App for App {
         let mut do_save = false;
         let mut do_close = false;
         if open {
-            egui::Window::new("⚙ 设置").open(&mut open).resizable(true).min_width(380.0).default_width(440.0).show(ctx, |ui| {
+            egui::Window::new("⚙ 设置").title_bar(false).open(&mut open).resizable(true).min_width(380.0).default_width(440.0).show(ctx, |ui| {
+                // 头部（与主界面扁平风格一致）
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("⚙ 设置").strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("×").clicked() { do_close = true; }
+                    });
+                });
+                ui.separator();
                 // API Keys
-                ui.add(egui::Label::new(egui::RichText::new("API Keys").strong()));
+                ui.label(egui::RichText::new("API Keys").strong());
                 ui.horizontal(|ui| {
                     ui.add_sized([85.0, 18.0], egui::Label::new("DoubanInfo:"));
                     ui.add(egui::TextEdit::singleline(&mut self.settings_draft.keys.doubaninfo).desired_width(ui.available_width() - 8.0));
@@ -330,26 +389,28 @@ impl eframe::App for App {
                 });
                 ui.separator();
                 // 默认行为
-                ui.add(egui::Label::new(egui::RichText::new("默认行为").strong()));
+                ui.label(egui::RichText::new("默认行为").strong());
                 ui.horizontal(|ui| {
-                    ui.add_sized([85.0, 18.0], egui::Label::new("源:"));
-                    egui::ComboBox::from_id_salt("s_src").width(120.0).selected_text(cn_source(&self.settings_draft.defaults.source))
-                        .show_ui(ui, |ui| { for (v,l) in [("auto","自动"),("douban","豆瓣"),("tmdb","TMDB"),("merge","聚合")] { ui.selectable_value(&mut self.settings_draft.defaults.source, v.into(), l); } });
+                    ui.add_sized([60.0, 18.0], egui::Label::new("源:"));
+                    for (v,l) in [("auto","自动"),("douban","豆瓣"),("tmdb","TMDB"),("merge","聚合")] {
+                        ui.radio_value(&mut self.settings_draft.defaults.source, v.into(), l);
+                    }
                 });
                 ui.horizontal(|ui| {
-                    ui.add_sized([85.0, 18.0], egui::Label::new("格式:"));
-                    egui::ComboBox::from_id_salt("s_fmt").width(120.0).selected_text(cn_format(&self.settings_draft.defaults.format))
-                        .show_ui(ui, |ui| { for (v,l) in [("bbcode","BBCode"),("json","JSON")] { ui.selectable_value(&mut self.settings_draft.defaults.format, v.into(), l); } });
+                    ui.add_sized([60.0, 18.0], egui::Label::new("格式:"));
+                    ui.radio_value(&mut self.settings_draft.defaults.format, "bbcode".into(), "BBCode");
+                    ui.radio_value(&mut self.settings_draft.defaults.format, "json".into(), "JSON");
                 });
                 ui.horizontal(|ui| {
-                    ui.add_sized([85.0, 18.0], egui::Label::new("类型:"));
-                    egui::ComboBox::from_id_salt("s_mt").width(120.0).selected_text(cn_media(&self.settings_draft.defaults.media_type))
-                        .show_ui(ui, |ui| { for (v,l) in [("auto","自动"),("movie","电影"),("tv","剧集")] { ui.selectable_value(&mut self.settings_draft.defaults.media_type, v.into(), l); } });
+                    ui.add_sized([60.0, 18.0], egui::Label::new("类型:"));
+                    ui.radio_value(&mut self.settings_draft.defaults.media_type, "auto".into(), "自动");
+                    ui.radio_value(&mut self.settings_draft.defaults.media_type, "movie".into(), "电影");
+                    ui.radio_value(&mut self.settings_draft.defaults.media_type, "tv".into(), "剧集");
                     ui.checkbox(&mut self.settings_draft.defaults.full_celebrities, "详细");
                 });
                 ui.separator();
                 // 限流
-                ui.add(egui::Label::new(egui::RichText::new("限流").strong()));
+                ui.label(egui::RichText::new("限流").strong());
                 ui.horizontal(|ui| {
                     ui.add_sized([70.0, 18.0], egui::Label::new("重试:"));
                     ui.add(egui::DragValue::new(&mut self.settings_draft.limits.retry));
@@ -359,9 +420,21 @@ impl eframe::App for App {
                     ui.add(egui::DragValue::new(&mut self.settings_draft.limits.min_interval));
                 });
                 ui.separator();
-                // 底部按钮：✕ 关闭 在右下角（right_to_left 布局）
+                // 配置文件
+                ui.label(egui::RichText::new("配置文件").strong());
+                let cur = self.config_location_kind();
+                let mut choice = cur.to_string();
+                ui.horizontal(|ui| {
+                    ui.add_sized([60.0, 18.0], egui::Label::new("位置:"));
+                    ui.radio_value(&mut choice, "app".into(), "程序目录");
+                    ui.radio_value(&mut choice, "user".into(), "用户目录");
+                    if ui.button("📁 打开目录").clicked() { self.open_config_dir(); }
+                });
+                ui.add(egui::Label::new(egui::RichText::new(self.cfg_path.as_str()).color(egui::Color32::from_rgb(0xa6,0xad,0xc8)).small()).wrap_mode(egui::TextWrapMode::Wrap));
+                if choice != cur { self.switch_config_location(choice == "user"); }
+                ui.separator();
+                // 底部：保存
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if secondary_btn(ui, "× 关闭").clicked() { do_close = true; }
                     if primary_btn(ui, "💾 保存").clicked() { do_save = true; }
                 });
             });
@@ -867,15 +940,52 @@ fn install_system_font(ctx: &egui::Context) {
     eprintln!("[warn] 未找到系统 CJK 字体");
 }
 
+const CONFIG_TEMPLATE: &str = include_str!("../config.example.toml");
+
+/// 程序所在目录的 config.toml（便携优先）
+fn app_config_path() -> Option<std::path::PathBuf> {
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("config.toml")))
+}
+
+/// 用户配置目录的 config.toml（Windows %APPDATA%\doubangen，Linux ~/.config/doubangen）
+fn user_config_path() -> Option<std::path::PathBuf> {
+    dirs::config_dir().map(|d| d.join("doubangen").join("config.toml"))
+}
+
 fn find_config_path() -> Option<String> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let p = dir.join("config.toml");
-            if p.exists() { return p.to_str().map(String::from); }
+    if let Some(p) = app_config_path() {
+        if p.exists() { return p.to_str().map(String::from); }
+    }
+    if let Some(p) = user_config_path() {
+        if p.exists() { return p.to_str().map(String::from); }
+    }
+    None
+}
+
+/// 初次运行无配置时，生成默认模板：优先程序目录（便携），不可写则回退用户目录。
+fn ensure_config() -> (Arc<Mutex<Config>>, String) {
+    if let Some(p) = find_config_path() {
+        if let Ok(c) = config::load(&p) {
+            return (Arc::new(Mutex::new(c)), p);
         }
     }
-    if std::path::Path::new("config.toml").exists() { return Some("config.toml".into()); }
-    None
+    let try_write = |path: &std::path::Path| -> bool {
+        if let Some(dir) = path.parent() {
+            if std::fs::create_dir_all(dir).is_err() { return false; }
+        }
+        std::fs::write(path, CONFIG_TEMPLATE).is_ok()
+    };
+    if let Some(p) = app_config_path() {
+        if try_write(&p) {
+            return (Arc::new(Mutex::new(Config::default())), p.to_str().unwrap().to_string());
+        }
+    }
+    if let Some(p) = user_config_path() {
+        if try_write(&p) {
+            return (Arc::new(Mutex::new(Config::default())), p.to_str().unwrap().to_string());
+        }
+    }
+    (Arc::new(Mutex::new(Config::default())), "config.toml".into())
 }
 
 fn history_path_for(cfg_path: &str) -> String {

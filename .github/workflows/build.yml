@@ -26,11 +26,10 @@ jobs:
         run: |
           mkdir -p dist
           cp target/release/doubangen dist/
-          cp config.example.toml dist/
       - uses: actions/upload-artifact@v4
         with:
           name: doubangen-linux
-          path: dist/
+          path: dist/doubangen
 
   build-windows:
     # 用 ubuntu 交叉编译 x86_64-pc-windows-gnu，复用本地验证过的工具链
@@ -52,11 +51,10 @@ jobs:
         run: |
           mkdir -p dist
           cp target/x86_64-pc-windows-gnu/release/doubangen.exe dist/
-          cp config.example.toml dist/
       - uses: actions/upload-artifact@v4
         with:
           name: doubangen-windows
-          path: dist/
+          path: dist/doubangen.exe
 
   release:
     needs: [build-linux, build-windows]
@@ -68,14 +66,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: Zip
+      - name: Rename
         run: |
           V=${GITHUB_REF_NAME#v}
-          cd artifacts
-          zip -r ../doubangen-${V}-linux-x86_64.zip doubangen-linux
-          zip -r ../doubangen-${V}-windows-x86_64.zip doubangen-windows
+          cp artifacts/doubangen-linux/doubangen doubangen-${V}-linux-x86_64
+          cp artifacts/doubangen-windows/doubangen.exe doubangen-${V}-windows-x86_64.exe
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            doubangen-*-linux-x86_64.zip
-            doubangen-*-windows-x86_64.zip
+            doubangen-*-linux-x86_64
+            doubangen-*-windows-x86_64.exe

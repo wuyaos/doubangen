@@ -19,10 +19,10 @@
 
 | 平台 | 文件 |
 |------|------|
-| Linux x86_64 | `doubangen-0.1.0-linux-x86_64.zip` |
-| Windows x86_64 | `doubangen-0.1.0-windows-x86_64.zip` |
+| Linux x86_64 | `doubangen-0.1.0-linux-x86_64` |
+| Windows x86_64 | `doubangen-0.1.0-windows-x86_64.exe` |
 
-解压后将 `config.example.toml` 复制为 `config.toml` 并填入 API Key，与可执行文件同目录运行。
+直接运行可执行文件，首次运行自动生成 `config.toml`（程序目录优先，只读时回退用户配置目录），在「⚙ 设置」面板填入 API Key 即可。
 
 ### 已知限制
 

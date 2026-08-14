@@ -70,11 +70,12 @@ jobs:
           path: artifacts
       - name: Zip
         run: |
+          V=${GITHUB_REF_NAME#v}
           cd artifacts
-          zip -r ../doubangen-linux.zip doubangen-linux
-          zip -r ../doubangen-windows.zip doubangen-windows
+          zip -r ../doubangen-${V}-linux-x86_64.zip doubangen-linux
+          zip -r ../doubangen-${V}-windows-x86_64.zip doubangen-windows
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            doubangen-linux.zip
-            doubangen-windows.zip
+            doubangen-*-linux-x86_64.zip
+            doubangen-*-windows-x86_64.zip

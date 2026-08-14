@@ -1,0 +1,13 @@
+# Rust 构建产物
+/target
+
+# 本地配置（含 API Key，切勿提交）
+config.toml
+
+# 运行时生成的历史记录
+history.json
+
+# 编辑器/系统
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,21 @@
+[package]
+name = "doubangen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui_extras = { version = "0.29", default-features = false, features = ["image", "http"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[profile.release]
+opt-level = "s"       # 体积与执行速度平衡；z 更小但热路径较慢
+lto = true
+strip = true
+panic = "abort"
+codegen-units = 1
+incremental = false

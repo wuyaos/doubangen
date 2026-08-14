@@ -1,0 +1,80 @@
+# ════════════════════════════════════════════════════════════════════
+# 豆瓣简介生成器 配置模板
+# 复制为 config.toml 后填入你自己的 API Key；config.toml 不会进入版本库
+# ════════════════════════════════════════════════════════════════════
+
+
+# ──────────────────── 密钥 ────────────────────
+[keys]
+
+# DoubanInfo API Key（在 doubaninfo.com 用户中心创建）
+# 仅使用 tmdb 源时可留空字符串
+doubaninfo = ""
+
+# TMDB API Key v3（在 themoviedb.org 设置页申请）
+# 仅使用 douban 源时可留空字符串
+tmdb = ""
+
+
+# ────────────────── 默认行为 ──────────────────
+[defaults]
+
+# 数据源
+#   douban : 仅豆瓣（评分/获奖/中文最全）
+#   tmdb   : 仅 TMDB
+#   auto   : 按输入形态自动选（豆瓣ID/链接/中文名→douban；TMDB URL→tmdb）
+#   merge  : 豆瓣主体 + TMDB 补充（评分/多语言别名/代表作头像）
+source = "auto"
+
+# 输出格式：json | bbcode
+format = "bbcode"
+
+# 媒体类型（仅 tmdb 源生效）：movie | tv | auto
+media_type = "auto"
+
+# 是否填充 full_celebrities（演职员头像+代表作，较慢）
+full_celebrities = false
+
+
+# ────────────────── 搜索与交互 ──────────────────
+[search]
+
+# auto 名称搜索：豆瓣无结果时是否回退 TMDB
+fallback_to_tmdb = true
+
+# 交互选择时最多展示的候选条数
+max_candidates = 10
+
+# 是否严格按年份过滤
+#   true  = 年份不匹配的结果直接丢弃
+#   false = 年份不匹配也展示，供用户选择
+year_strict = false
+
+
+# ────────────────── merge 聚合 ──────────────────
+[merge]
+
+# 主体源（豆瓣优先，TMDB 仅作补充）
+primary = "douban"
+
+# 用 TMDB 补充 TMDB 评分（tmdb_rating / tmdb_votes / tmdb_link）
+enrich_tmdb_rating = true
+
+# 用 TMDB 补充多语言别名（追加到 aka，去重）
+enrich_tmdb_aka = true
+
+# 用 TMDB 补充演职员头像/代表作（豆瓣 full_celebrities 优先，缺失项由 TMDB 兜底）
+enrich_celebrities = true
+
+
+# ────────────────── 限流与重试 ──────────────────
+[limits]
+
+# 请求失败重试次数（含首次共 retry+1 次）
+retry = 2
+
+# 单次请求超时（秒）
+timeout = 20
+
+# DoubanInfo 请求最小间隔（秒，频控友好）
+min_interval = 0.1
